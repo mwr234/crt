@@ -1,6 +1,9 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Discrete Torus Walk</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   /* Layout: a chalkboard-adjacent two-panel bench — flat fundamental domain left, the glued torus right, one control strip above. */
@@ -76,6 +79,12 @@
   .status .k b { color: var(--accent); font-weight: 500; }
   .status .vis b { font-weight: 500; }
 
+  .kbar-wrap { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: -6px; }
+  .kbar { position: relative; flex: 1; height: 10px; border-radius: 5px; max-width: 420px; }
+  .kbar-tick {
+    position: absolute; top: -4px; width: 4px; height: 18px; margin-left: -2px; border-radius: 2px;
+    background: var(--fg); box-shadow: 0 0 0 1.5px var(--bg);
+  }
   .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 760px) { .panels { grid-template-columns: 1fr; } }
   .panel {
@@ -99,16 +108,18 @@
   .verdict .math { font-family: var(--mono); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
+</head>
+<body>
 
 <div class="wrap">
   <header>
     <h1>Walking the discrete torus with (1, 1)</h1>
-    <p>Start at (0, 0) in <span class="math">Z<sub>m</sub> × Z<sub>n</sub></span> and keep adding (1, 1). The path runs diagonally, wraps at every edge, and comes back to the start after <span class="math">lcm(m, n)</span> steps. It lands on every point exactly when <span class="math">gcd(m, n) = 1</span>: that is the Chinese Remainder Theorem, drawn.</p>
+    <p>Start at (0, 0) in <span class="math">Z<sub>m</sub> × Z<sub>n</sub></span> and keep adding (1, 1). The path runs diagonally, wraps at every edge, and comes back to the start after <span class="math">lcm(m, n)</span> steps. It lands on every point exactly when <span class="math">gcd(m, n) = 1</span>: that is the Chinese Remainder Theorem, drawn. The color runs with k, so the same stretch of path has the same color in both pictures.</p>
   </header>
 
   <div class="controls">
-    <div class="field"><label for="m">m (columns)</label><input id="m" type="number" min="1" max="16" value="4"></div>
-    <div class="field"><label for="n">n (rows)</label><input id="n" type="number" min="1" max="16" value="7"></div>
+    <div class="field"><label for="m">m (columns)</label><input id="m" type="number" min="1" max="16" value="11"></div>
+    <div class="field"><label for="n">n (rows)</label><input id="n" type="number" min="1" max="16" value="9"></div>
     <div class="field"><label for="speed">speed</label><input id="speed" type="range" min="1" max="10" value="4"></div>
     <div class="buttons">
       <button id="play" class="primary">Play</button>
@@ -120,8 +131,13 @@
 
   <div class="status">
     <span class="k" id="kline">k = 0 → (0, 0)</span>
-    <span class="vis" id="visline">visited 1 of 28</span>
-    <span class="vis" id="gcdline">gcd(4, 7) = 1 · lcm = 28</span>
+    <span class="vis" id="visline">visited 1 of 99</span>
+    <span class="vis" id="gcdline">gcd(11, 9) = 1 · lcm = 99</span>
+  </div>
+  <div class="kbar-wrap" aria-hidden="true">
+    <span class="kbar-label">k = 0</span>
+    <div class="kbar" id="kbar"><div class="kbar-tick" id="ktick"></div></div>
+    <span class="kbar-label" id="kbar-end">k = 98</span>
   </div>
 
   <div class="panels">
@@ -148,7 +164,7 @@
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
   const gcd = (a, b) => b ? gcd(b, a % b) : a;
-  let m = 4, n = 7, k = 0, L = 28, playing = false, timer = null;
+  let m = 11, n = 9, k = 0, L = 99, playing = false, timer = null;
   let yaw = -0.55, pitch = 0.95, dragging = null;
 
   function readParams() {
@@ -159,6 +175,14 @@
   }
   function pt(s) { return [s % m, s % n]; }
 
+  // Color of step s, shared by both views: hue sweeps blue → violet → magenta → orange as k runs 0 → L.
+  const isDark = () => getComputedStyle(document.documentElement).colorScheme.includes('dark');
+  function kColor(s) {
+    const t = L > 1 ? s / (L - 1) : 0;
+    const h = 212 + 170 * t;                  // 212 → 382 (= 22)
+    return `hsl(${h % 360} 68% ${isDark() ? 62 : 44}%)`;
+  }
+
   function statusText() {
     const [a, b] = pt(k);
     $('kline').innerHTML = `k = <b>${k}</b> → (${k} mod ${m}, ${k} mod ${n}) = (<b>${a}</b>, <b>${b}</b>)`;
@@ -166,6 +190,10 @@
     $('visline').innerHTML = `visited <b>${visited}</b> of ${m * n}`;
     const g = gcd(m, n);
     $('gcdline').textContent = `gcd(${m}, ${n}) = ${g} · lcm = ${L}`;
+    const stops = []; for (let q = 0; q <= 12; q++) stops.push(kColor(Math.round((L - 1) * q / 12)));
+    $('kbar').style.background = `linear-gradient(90deg, ${stops.join(',')})`;
+    $('ktick').style.left = (L > 1 ? Math.min(k, L - 1) / (L - 1) * 100 : 0) + '%';
+    $('kbar-end').textContent = `k = ${L - 1}`;
     const v = $('verdict');
     if (k < L) {
       v.className = 'verdict';
@@ -214,17 +242,18 @@
     // path, clipped to the domain; draw the segment and its three wrapped copies
     ctx.save();
     ctx.beginPath(); ctx.rect(X(0), Y(n), gw, gh); ctx.clip();
-    ctx.strokeStyle = css('--trail'); ctx.lineWidth = Math.max(2, cw * 0.09); ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(2, cw * 0.09); ctx.lineCap = 'round';
     const shifts = [[0, 0], [-m, 0], [0, -n], [-m, -n]];
-    ctx.beginPath();
     for (let s = 0; s < k; s++) {
       const [i, j] = pt(s);
+      ctx.strokeStyle = kColor(s);
+      ctx.beginPath();
       for (const [dx, dy] of shifts) {
         const x0 = i + 0.5 + dx, y0 = j + 0.5 + dy;
         ctx.moveTo(X(x0), Y(y0)); ctx.lineTo(X(x0 + 1), Y(y0 + 1));
       }
+      ctx.stroke();
     }
-    ctx.stroke();
     ctx.restore();
 
     // points
@@ -238,7 +267,7 @@
       const key = i + ',' + j, hit = visited.has(key);
       const cx = X(i + 0.5), cy = Y(j + 0.5);
       ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      if (hit) { ctx.fillStyle = css('--dot-hit'); ctx.fill(); }
+      if (hit) { ctx.fillStyle = kColor(visited.get(key)); ctx.fill(); }
       else { ctx.fillStyle = css('--panel'); ctx.fill(); ctx.strokeStyle = css('--dot'); ctx.lineWidth = 1.5; ctx.stroke(); }
       if (showLabels && hit) {
         ctx.fillStyle = css('--fg');
@@ -287,17 +316,18 @@
     const sub = 10;
     for (let s = 0; s < k; s++) {
       const [i, j] = pt(s);
+      const color = kColor(s);
       for (let u = 0; u < sub; u++) {
         const p0 = proj(TH(i + u / sub), PH(j + u / sub)), p1 = proj(TH(i + (u + 1) / sub), PH(j + (u + 1) / sub));
-        prims.push({ type: 'seg', pts: [p0, p1], z: (p0.z + p1.z) / 2 });
+        prims.push({ type: 'seg', pts: [p0, p1], z: (p0.z + p1.z) / 2, color });
       }
     }
     // points
-    const visited = new Set();
-    for (let s = 0; s <= Math.min(k, L - 1); s++) { const [i, j] = pt(s); visited.add(i + ',' + j); }
+    const visited = new Map();
+    for (let s = 0; s <= Math.min(k, L - 1); s++) { const [i, j] = pt(s); visited.set(i + ',' + j, s); }
     for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) {
-      const p = proj(TH(i), PH(j));
-      prims.push({ type: 'dot', p, z: p.z, hit: visited.has(i + ',' + j) });
+      const p = proj(TH(i), PH(j)), key = i + ',' + j;
+      prims.push({ type: 'dot', p, z: p.z, hit: visited.has(key), color: visited.has(key) ? kColor(visited.get(key)) : null });
     }
     const [a, b] = pt(k);
     const wp = proj(TH(a), PH(b));
@@ -314,11 +344,11 @@
     for (const p of rest) {
       ctx.globalAlpha = depthAlpha(p.z);
       if (p.type === 'seg') {
-        ctx.strokeStyle = css('--trail'); ctx.lineWidth = 3; ctx.lineCap = 'round';
+        ctx.strokeStyle = p.color; ctx.lineWidth = 3; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(p.pts[0].sx, p.pts[0].sy); ctx.lineTo(p.pts[1].sx, p.pts[1].sy); ctx.stroke();
       } else if (p.type === 'dot') {
         ctx.beginPath(); ctx.arc(p.p.sx, p.p.sy, dotR, 0, Math.PI * 2);
-        if (p.hit) { ctx.fillStyle = css('--dot-hit'); ctx.fill(); }
+        if (p.hit) { ctx.fillStyle = p.color; ctx.fill(); }
         else { ctx.fillStyle = css('--panel'); ctx.fill(); ctx.strokeStyle = css('--dot'); ctx.lineWidth = 1.5; ctx.stroke(); }
       } else {
         ctx.beginPath(); ctx.arc(p.p.sx, p.p.sy, dotR * 1.7, 0, Math.PI * 2);
@@ -373,10 +403,8 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
 
   readParams();
-  // open mid-walk so the first frame shows what the page does
-  k = 11;
   draw();
 })();
 </script>
-
-</body></html>
+</body>
+</html>
