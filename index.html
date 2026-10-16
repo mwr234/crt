@@ -1,0 +1,382 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Discrete Torus Walk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a chalkboard-adjacent two-panel bench — flat fundamental domain left, the glued torus right, one control strip above. */
+  :root {
+    --bg: #f6f4ee;
+    --panel: #ffffff;
+    --fg: #1d2320;
+    --muted: #6b716c;
+    --rule: #d9d6cc;
+    --grid: #e6e3d9;
+    --accent: #b5461c;      /* the walker */
+    --trail: #2a5c8f;       /* the path already drawn */
+    --dot: #9aa09a;
+    --dot-hit: #2a5c8f;
+    --display: "Spectral", Georgia, "Times New Roman", serif;
+    --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15191a; --panel: #1d2224; --fg: #e8e6df; --muted: #9aa09a;
+      --rule: #343b3d; --grid: #262d2f; --accent: #e8773f; --trail: #6fa4d8;
+      --dot: #4b5457; --dot-hit: #6fa4d8; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15191a; --panel: #1d2224; --fg: #e8e6df; --muted: #9aa09a;
+    --rule: #343b3d; --grid: #262d2f; --accent: #e8773f; --trail: #6fa4d8;
+    --dot: #4b5457; --dot-hit: #6fa4d8; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--body);
+    font-size: 15px; line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 40px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 18px; }
+  header h1 {
+    font-family: var(--display); font-weight: 600; font-size: clamp(26px, 3.4vw, 36px);
+    margin: 0 0 6px; line-height: 1.15; text-wrap: balance;
+  }
+  header p { margin: 0; color: var(--muted); max-width: 62ch; }
+  header .math { font-family: var(--mono); color: var(--fg); }
+
+  .controls {
+    display: flex; flex-wrap: wrap; align-items: end; gap: 14px 22px;
+    padding: 14px 16px; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel);
+  }
+  .field { display: grid; gap: 4px; }
+  .field label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .field input[type=number] {
+    width: 74px; font: 500 16px var(--mono); padding: 6px 8px; border-radius: 6px;
+    border: 1px solid var(--rule); background: var(--bg); color: var(--fg);
+  }
+  .field input[type=range] { width: 130px; accent-color: var(--trail); }
+  .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: 500 14px var(--body); padding: 8px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--rule); background: var(--bg); color: var(--fg);
+  }
+  button.primary { background: var(--trail); border-color: var(--trail); color: #fff; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .check input { accent-color: var(--trail); }
+
+  .status {
+    display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: baseline;
+    font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums;
+  }
+  .status .k { font-size: 22px; font-weight: 500; }
+  .status .k b { color: var(--accent); font-weight: 500; }
+  .status .vis b { font-weight: 500; }
+
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .panels { grid-template-columns: 1fr; } }
+  .panel {
+    min-width: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
+    padding: 12px 14px 10px; display: grid; gap: 6px;
+  }
+  .panel h2 {
+    margin: 0; font-family: var(--display); font-weight: 600; font-size: 18px;
+  }
+  .panel .sub { margin: 0; color: var(--muted); font-size: 13px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 4px; touch-action: none; }
+  #torus { cursor: grab; }
+  #torus:active { cursor: grabbing; }
+
+  .verdict {
+    border-left: 3px solid var(--trail); padding: 10px 14px; background: var(--panel);
+    border-radius: 0 6px 6px 0; max-width: 72ch;
+  }
+  .verdict.open { border-left-color: var(--accent); }
+  .verdict p { margin: 0; }
+  .verdict .math { font-family: var(--mono); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Walking the discrete torus with (1, 1)</h1>
+    <p>Start at (0, 0) in <span class="math">Z<sub>m</sub> × Z<sub>n</sub></span> and keep adding (1, 1). The path runs diagonally, wraps at every edge, and comes back to the start after <span class="math">lcm(m, n)</span> steps. It lands on every point exactly when <span class="math">gcd(m, n) = 1</span>: that is the Chinese Remainder Theorem, drawn.</p>
+  </header>
+
+  <div class="controls">
+    <div class="field"><label for="m">m (columns)</label><input id="m" type="number" min="1" max="16" value="4"></div>
+    <div class="field"><label for="n">n (rows)</label><input id="n" type="number" min="1" max="16" value="7"></div>
+    <div class="field"><label for="speed">speed</label><input id="speed" type="range" min="1" max="10" value="4"></div>
+    <div class="buttons">
+      <button id="play" class="primary">Play</button>
+      <button id="step">Step</button>
+      <button id="reset">Reset</button>
+    </div>
+    <label class="check"><input id="labels" type="checkbox" checked> label each point with its k</label>
+  </div>
+
+  <div class="status">
+    <span class="k" id="kline">k = 0 → (0, 0)</span>
+    <span class="vis" id="visline">visited 1 of 28</span>
+    <span class="vis" id="gcdline">gcd(4, 7) = 1 · lcm = 28</span>
+  </div>
+
+  <div class="panels">
+    <section class="panel">
+      <h2>Fundamental domain</h2>
+      <p class="sub">The m × n grid with opposite edges identified. Leaving the right edge re-enters on the left; leaving the top re-enters at the bottom.</p>
+      <canvas id="flat" width="520" height="520" aria-label="m by n grid showing the path of k(1,1)"></canvas>
+    </section>
+    <section class="panel">
+      <h2>Glued into a torus</h2>
+      <p class="sub">Columns go around the big circle, rows around the tube. Drag to rotate.</p>
+      <canvas id="torus" width="520" height="520" aria-label="Torus with lattice points and the winding path"></canvas>
+    </section>
+  </div>
+
+  <div class="verdict" id="verdict"><p>Press Play, or Step through one addition at a time.</p></div>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const flat = $('flat'), torus = $('torus');
+  const fctx = flat.getContext('2d'), tctx = torus.getContext('2d');
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  let m = 4, n = 7, k = 0, L = 28, playing = false, timer = null;
+  let yaw = -0.55, pitch = 0.95, dragging = null;
+
+  function readParams() {
+    m = Math.min(16, Math.max(1, parseInt($('m').value) || 1));
+    n = Math.min(16, Math.max(1, parseInt($('n').value) || 1));
+    $('m').value = m; $('n').value = n;
+    L = m * n / gcd(m, n);
+  }
+  function pt(s) { return [s % m, s % n]; }
+
+  function statusText() {
+    const [a, b] = pt(k);
+    $('kline').innerHTML = `k = <b>${k}</b> → (${k} mod ${m}, ${k} mod ${n}) = (<b>${a}</b>, <b>${b}</b>)`;
+    const visited = Math.min(k + 1, L);
+    $('visline').innerHTML = `visited <b>${visited}</b> of ${m * n}`;
+    const g = gcd(m, n);
+    $('gcdline').textContent = `gcd(${m}, ${n}) = ${g} · lcm = ${L}`;
+    const v = $('verdict');
+    if (k < L) {
+      v.className = 'verdict';
+      v.innerHTML = `<p>Each step adds (1, 1). The point after k steps is <span class="math">(k mod ${m}, k mod ${n})</span>, so the walk is the map <span class="math">Z → Z<sub>${m}</sub> × Z<sub>${n}</sub></span>, k ↦ k·(1, 1). It closes up when k is a multiple of both ${m} and ${n}, i.e. at k = lcm = ${L}.</p>`;
+    } else if (g === 1) {
+      v.className = 'verdict open';
+      v.innerHTML = `<p>Back at (0, 0) after ${L} = ${m}·${n} steps, having landed on all ${m * n} points once each. So (1, 1) has order ${m * n} and generates the group: <span class="math">Z<sub>${m}</sub> × Z<sub>${n}</sub> ≅ Z<sub>${m * n}</sub></span>. Reading the labels backwards is the CRT: every pair (a, b) has exactly one k in 0…${m * n - 1} with k ≡ a (mod ${m}) and k ≡ b (mod ${n}).</p>`;
+    } else {
+      v.className = 'verdict open';
+      v.innerHTML = `<p>Back at (0, 0) after only lcm(${m}, ${n}) = ${L} steps, with ${m * n - L} points never reached. Since gcd(${m}, ${n}) = ${g} > 1, the order of (1, 1) is ${L} < ${m * n}, and the walk traces a proper subgroup. The ${g} missed diagonals are its other cosets; the pairs (a, b) it skips are exactly those with a ≢ b (mod ${g}), which no k can satisfy.</p>`;
+    }
+  }
+
+  /* ---------- flat grid ---------- */
+  function sizeCanvas(c) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth || 520;
+    const h = Math.round(w * (c === flat ? Math.min(1.15, Math.max(0.6, n / m)) : 0.78));
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+      c.style.height = h + 'px';
+    }
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return [w, h];
+  }
+
+  function drawFlat() {
+    const [W, H] = sizeCanvas(flat);
+    const pad = 22;
+    const cw = Math.min((W - 2 * pad) / m, (H - 2 * pad) / n);
+    const gw = cw * m, gh = cw * n;
+    const ox = (W - gw) / 2, oy = (H - gh) / 2;
+    const X = x => ox + x * cw, Y = y => oy + gh - y * cw;   // continuous coords in [0,m]x[0,n]
+    const ctx = fctx;
+    ctx.clearRect(0, 0, W, H);
+
+    // grid
+    ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1;
+    for (let i = 0; i <= m; i++) { ctx.beginPath(); ctx.moveTo(X(i), Y(0)); ctx.lineTo(X(i), Y(n)); ctx.stroke(); }
+    for (let j = 0; j <= n; j++) { ctx.beginPath(); ctx.moveTo(X(0), Y(j)); ctx.lineTo(X(m), Y(j)); ctx.stroke(); }
+    // identified edges, drawn as a pair of matching rules
+    ctx.strokeStyle = css('--rule'); ctx.lineWidth = 2;
+    ctx.strokeRect(X(0), Y(n), gw, gh);
+
+    // path, clipped to the domain; draw the segment and its three wrapped copies
+    ctx.save();
+    ctx.beginPath(); ctx.rect(X(0), Y(n), gw, gh); ctx.clip();
+    ctx.strokeStyle = css('--trail'); ctx.lineWidth = Math.max(2, cw * 0.09); ctx.lineCap = 'round';
+    const shifts = [[0, 0], [-m, 0], [0, -n], [-m, -n]];
+    ctx.beginPath();
+    for (let s = 0; s < k; s++) {
+      const [i, j] = pt(s);
+      for (const [dx, dy] of shifts) {
+        const x0 = i + 0.5 + dx, y0 = j + 0.5 + dy;
+        ctx.moveTo(X(x0), Y(y0)); ctx.lineTo(X(x0 + 1), Y(y0 + 1));
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // points
+    const visited = new Map();
+    for (let s = 0; s <= Math.min(k, L - 1); s++) { const [i, j] = pt(s); visited.set(i + ',' + j, s); }
+    const r = Math.max(3, cw * 0.16);
+    const showLabels = $('labels').checked && cw >= 26;
+    ctx.font = `500 ${Math.max(9, Math.min(13, cw * 0.32))}px ${css('--mono')}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) {
+      const key = i + ',' + j, hit = visited.has(key);
+      const cx = X(i + 0.5), cy = Y(j + 0.5);
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      if (hit) { ctx.fillStyle = css('--dot-hit'); ctx.fill(); }
+      else { ctx.fillStyle = css('--panel'); ctx.fill(); ctx.strokeStyle = css('--dot'); ctx.lineWidth = 1.5; ctx.stroke(); }
+      if (showLabels && hit) {
+        ctx.fillStyle = css('--fg');
+        ctx.fillText(visited.get(key), cx + r + 2, cy - r - 4);
+      }
+    }
+    // walker
+    const [a, b] = pt(k);
+    ctx.beginPath(); ctx.arc(X(a + 0.5), Y(b + 0.5), r * 1.6, 0, Math.PI * 2);
+    ctx.fillStyle = css('--accent'); ctx.fill();
+
+    // axis labels
+    ctx.fillStyle = css('--muted'); ctx.font = `12px ${css('--mono')}`;
+    for (let i = 0; i < m; i++) ctx.fillText(i, X(i + 0.5), Y(0) + 12);
+    ctx.textAlign = 'right';
+    for (let j = 0; j < n; j++) ctx.fillText(j, X(0) - 7, Y(j + 0.5));
+  }
+
+  /* ---------- torus ---------- */
+  function drawTorus() {
+    const [W, H] = sizeCanvas(torus);
+    const ctx = tctx;
+    ctx.clearRect(0, 0, W, H);
+    const R = 1, rr = 0.42;
+    const scale = Math.min(W, H) / (2 * (R + rr) * 1.12);
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    function proj(th, ph) {
+      const x = (R + rr * Math.cos(ph)) * Math.cos(th);
+      const y = (R + rr * Math.cos(ph)) * Math.sin(th);
+      const z = rr * Math.sin(ph);
+      // yaw about z, then pitch about x
+      const x1 = x * cy - y * sy, y1 = x * sy + y * cy;
+      const y2 = y1 * cp - z * sp, z2 = y1 * sp + z * cp;
+      return { sx: W / 2 + x1 * scale, sy: H / 2 - y2 * scale, z: z2 };
+    }
+    const TH = i => 2 * Math.PI * i / m, PH = j => 2 * Math.PI * j / n;
+
+    // faint surface wireframe
+    const prims = [];
+    const ring = (fn, count) => { for (let q = 0; q < count; q++) prims.push({ type: 'wire', pts: fn(q) }); };
+    const tube = 36, around = 48;
+    ring(q => Array.from({ length: tube + 1 }, (_, t) => proj(2 * Math.PI * q / around, 2 * Math.PI * t / tube)), around);
+    ring(q => Array.from({ length: around + 1 }, (_, t) => proj(2 * Math.PI * t / around, 2 * Math.PI * q / tube)), tube);
+
+    // path segments, subdivided
+    const sub = 10;
+    for (let s = 0; s < k; s++) {
+      const [i, j] = pt(s);
+      for (let u = 0; u < sub; u++) {
+        const p0 = proj(TH(i + u / sub), PH(j + u / sub)), p1 = proj(TH(i + (u + 1) / sub), PH(j + (u + 1) / sub));
+        prims.push({ type: 'seg', pts: [p0, p1], z: (p0.z + p1.z) / 2 });
+      }
+    }
+    // points
+    const visited = new Set();
+    for (let s = 0; s <= Math.min(k, L - 1); s++) { const [i, j] = pt(s); visited.add(i + ',' + j); }
+    for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) {
+      const p = proj(TH(i), PH(j));
+      prims.push({ type: 'dot', p, z: p.z, hit: visited.has(i + ',' + j) });
+    }
+    const [a, b] = pt(k);
+    const wp = proj(TH(a), PH(b));
+    prims.push({ type: 'walker', p: wp, z: wp.z + 0.001 });
+
+    // wires first (they are context), then everything else sorted back to front
+    ctx.lineWidth = 1; ctx.strokeStyle = css('--grid');
+    for (const w of prims) if (w.type === 'wire') {
+      ctx.beginPath(); w.pts.forEach((p, idx) => idx ? ctx.lineTo(p.sx, p.sy) : ctx.moveTo(p.sx, p.sy)); ctx.stroke();
+    }
+    const rest = prims.filter(p => p.type !== 'wire').sort((p, q) => p.z - q.z);
+    const zmax = R + rr, depthAlpha = z => 0.25 + 0.75 * (z + zmax) / (2 * zmax);
+    const dotR = Math.max(2.5, Math.min(6, scale * 0.045));
+    for (const p of rest) {
+      ctx.globalAlpha = depthAlpha(p.z);
+      if (p.type === 'seg') {
+        ctx.strokeStyle = css('--trail'); ctx.lineWidth = 3; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(p.pts[0].sx, p.pts[0].sy); ctx.lineTo(p.pts[1].sx, p.pts[1].sy); ctx.stroke();
+      } else if (p.type === 'dot') {
+        ctx.beginPath(); ctx.arc(p.p.sx, p.p.sy, dotR, 0, Math.PI * 2);
+        if (p.hit) { ctx.fillStyle = css('--dot-hit'); ctx.fill(); }
+        else { ctx.fillStyle = css('--panel'); ctx.fill(); ctx.strokeStyle = css('--dot'); ctx.lineWidth = 1.5; ctx.stroke(); }
+      } else {
+        ctx.beginPath(); ctx.arc(p.p.sx, p.p.sy, dotR * 1.7, 0, Math.PI * 2);
+        ctx.fillStyle = css('--accent'); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() { statusText(); drawFlat(); drawTorus(); }
+
+  /* ---------- control ---------- */
+  function stepOnce() {
+    if (k >= L) { stop(); return; }
+    k++;
+    draw();
+    if (k >= L) stop();
+  }
+  function stop() { playing = false; clearInterval(timer); timer = null; $('play').textContent = 'Play'; }
+  function start() {
+    if (k >= L) { k = 0; }
+    playing = true; $('play').textContent = 'Pause';
+    const ms = 900 / parseInt($('speed').value);
+    clearInterval(timer); timer = setInterval(stepOnce, ms);
+    draw();
+  }
+  function reset() { stop(); k = 0; readParams(); draw(); }
+
+  $('play').addEventListener('click', () => playing ? stop() : start());
+  $('step').addEventListener('click', () => { stop(); stepOnce(); });
+  $('reset').addEventListener('click', reset);
+  $('m').addEventListener('change', reset);
+  $('n').addEventListener('change', reset);
+  $('speed').addEventListener('input', () => { if (playing) start(); });
+  $('labels').addEventListener('change', draw);
+
+  // drag to rotate the torus
+  const pos = e => (e.touches ? [e.touches[0].clientX, e.touches[0].clientY] : [e.clientX, e.clientY]);
+  const down = e => { dragging = pos(e); e.preventDefault(); };
+  const move = e => {
+    if (!dragging) return;
+    const [x, y] = pos(e);
+    yaw += (x - dragging[0]) * 0.01; pitch = Math.max(0.05, Math.min(1.55, pitch + (y - dragging[1]) * 0.01));
+    dragging = [x, y]; drawTorus(); e.preventDefault();
+  };
+  const up = () => { dragging = null; };
+  torus.addEventListener('mousedown', down); window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  torus.addEventListener('touchstart', down, { passive: false }); window.addEventListener('touchmove', move, { passive: false }); window.addEventListener('touchend', up);
+
+  window.addEventListener('resize', draw);
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+
+  readParams();
+  // open mid-walk so the first frame shows what the page does
+  k = 11;
+  draw();
+})();
+</script>
+
+</body></html>
